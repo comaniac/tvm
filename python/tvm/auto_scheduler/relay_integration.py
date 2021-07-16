@@ -52,6 +52,8 @@ def call_all_topi_funcs(mod, params, target, opt_level=3):
     from tvm import relay
     from tvm.relay.backend import graph_executor_codegen
 
+    target = relay.build_module.build_target_by_device_type_map(target)
+
     # Turn off AutoTVM config not found warnings
     old_autotvm_silent = autotvm.GLOBAL_SCOPE.silent
     autotvm.GLOBAL_SCOPE.silent = True
@@ -71,11 +73,12 @@ def call_all_topi_funcs(mod, params, target, opt_level=3):
             opt_mod, _ = relay.optimize(mod_clone, target, params)
             grc = graph_executor_codegen.GraphExecutorCodegen(None, target)
             grc.codegen(opt_mod["main"])
-        except tvm.TVMError:
+        except tvm.TVMError as err:
             print(
                 "Get errors with GraphExecutorCodegen for task extraction. "
                 "Fallback to VMCompiler."
             )
+            print(str(err))
             mod_clone = deepcopy(mod)
             compiler = relay.vm.VMCompiler()
             if params:
@@ -127,8 +130,6 @@ def extract_tasks(
     """
     # pylint: disable=import-outside-toplevel
 
-    target, target_host = Target.check_and_update_host_consist(target, target_host)
-
     # Run the compiler to collect all TOPI calls during compilation.
     env = TracingEnvironment(
         TracingMode.EXTRACT_TASK if include_simple_tasks else TracingMode.EXTRACT_COMPLEX_TASK_ONLY
@@ -146,6 +147,8 @@ def extract_tasks(
         build_thread.start()
         build_thread.join()
     dispatch_ctx.verbose = old_verbose
+
+    target, target_host = Target.check_and_update_host_consist(target, target_host)
 
     # create search tasks
     tasks = []
